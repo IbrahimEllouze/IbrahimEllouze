@@ -227,7 +227,7 @@ def lagoon_field(svg, w, h, blobs, particles, seed, py):
     out = [f'<rect width="{w}" height="{h}" fill="{LAGOON_BG}"/><g filter="url(#{blur})">']
     for i, (cx, cy, r, c) in enumerate(blobs):
         out.append(f'<circle class="blob" cx="{cx}" cy="{cy}" r="{r}" fill="{c}" '
-                   f'style="animation-name:d{i % 4 + 1};animation-duration:{12 + 2 * i}s"/>')
+                   f'style="animation-name:d{i % 4 + 1};animation-duration:{18 + 3 * i}s"/>')
     out.append(f'</g><g fill="{LAGOON_PARTICLE}">')
     rnd = random.Random(seed)
     for _ in range(particles):
@@ -240,12 +240,13 @@ def lagoon_field(svg, w, h, blobs, particles, seed, py):
 
 
 def wave_path(y, flip=False, w=800, h=330):
+    # edges overshoot by 2px so the field never shows an anti-aliased seam at the sides
     if not flip:
-        a = f"M0 {y} C 160 {y-30} 300 {y+30} 420 {y+10} C 560 {y-14} 660 {y-30} 800 {y+2} V{h} H0 Z"
-        b = f"M0 {y+10} C 140 {y+30} 290 {y-20} 430 {y-2} C 570 {y+16} 690 {y+22} 800 {y-8} V{h} H0 Z"
+        a = f"M-2 {y} C 160 {y-30} 300 {y+30} 420 {y+10} C 560 {y-14} 660 {y-30} 802 {y+2} V{h + 2} H-2 Z"
+        b = f"M-2 {y+10} C 140 {y+30} 290 {y-20} 430 {y-2} C 570 {y+16} 690 {y+22} 802 {y-8} V{h + 2} H-2 Z"
     else:
-        a = f"M0 0 H800 V{y} C 640 {y+30} 520 {y-24} 400 {y-4} C 270 {y+18} 150 {y-20} 0 {y+4} Z"
-        b = f"M0 0 H800 V{y-8} C 650 {y-26} 520 {y+20} 400 {y} C 280 {y-18} 140 {y+16} 0 {y-6} Z"
+        a = f"M-2 -2 H802 V{y} C 640 {y+30} 520 {y-24} 400 {y-4} C 270 {y+18} 150 {y-20} -2 {y+4} Z"
+        b = f"M-2 -2 H802 V{y-8} C 650 {y-26} 520 {y+20} 400 {y} C 280 {y-18} 140 {y+16} -2 {y-6} Z"
     return a, b
 
 
@@ -277,7 +278,7 @@ def hero(th):
     clip = svg.uid("c")
     svg.defs.append(f'<clipPath id="{clip}"><path d="{round_rect(800, 330, 12, top=True)}"/></clipPath>')
     body = [lagoon_field(svg, 800, 330, [(150, 90, 150, "#0D9488"), (660, 70, 150, "#0891B2"),
-                                         (420, 250, 140, "#059669"), (740, 260, 110, "#1D4ED8")], 34, 11, (300, 360))]
+                                         (420, 250, 140, "#059669"), (740, 260, 110, "#1D4ED8")], 22, 11, (300, 360))]
     body.append(svg.text(400, 146, NAME, "Sora", 800, 62, "#ffffff", "middle", ls=-2))
     # typed lines (SMIL so it runs everywhere an SVG <img> animates)
     size, per = 19, 4.0
@@ -302,15 +303,23 @@ def hero(th):
         body.append(f'<rect x="{x0:.1f}" y="186" width="9.5" height="22" fill="#99F6E4" opacity="0">'
                     f'<animateTransform attributeName="transform" type="translate" dur="{total}s" repeatCount="indefinite" keyTimes="{kt2}" values="{v2}"/>'
                     f'<animate attributeName="opacity" dur="{total}s" repeatCount="indefinite" calcMode="discrete" keyTimes="{okt}" values="{ov}"/></rect>')
-    body.append(wave(296, th["bg"], 0.35))
-    body.append(wave(302, th["bg"]))
-    svg.add(f'<g clip-path="url(#{clip})">{"".join(body)}</g>')
+    svg.add(masked(svg, clip, body, [wave(296, "#000", 0.35), wave(302, "#000")], 330))
     return svg
 
 
-def job_status(svg, i, r=12, cyc=10.0, step=1.2):
+def masked(svg, clip, body, waves, h):
+    """Cut the wave out of the field with a mask, so the edge blends into any page colour without seams."""
+    m = svg.uid("m")
+    svg.defs.append(f'<mask id="{m}" maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="{h}">'
+                    f'<rect width="800" height="{h}" fill="#fff"/>{"".join(waves)}</mask>')
+    return f'<g clip-path="url(#{clip})"><g mask="url(#{m})">{"".join(body)}</g></g>'
+
+
+def job_status(svg, i, r=12, cyc=12.0, step=1.0):
+    """Jobs run in ~6.5s, then everything rests green for ~5s until the cycle restarts (GitHub loads README
+    images eagerly, so a play-once run would finish before the reader scrolls here)."""
     t_start = 0.4 + i * step
-    t_done = t_start + 0.9
+    t_done = t_start + 0.8
     p = lambda v: f"{v / cyc * 100:.2f}"
     k = svg.uid("j")
     svg.css.append(
@@ -341,11 +350,12 @@ def what_i_do(th, mode):
         x, y = (i % 2) * 406, 60 + (i // 2) * 232
         status, (t_done, cyc) = job_status(svg, i)
         hl = svg.uid("h")
-        svg.css.append(f"@keyframes {hl}{{0%,{t_done / cyc * 100:.1f}%{{opacity:0}}{(t_done + .3) / cyc * 100:.1f}%,94%{{opacity:1}}100%{{opacity:0}}}}"
-                       f".{hl}{{animation:{hl} {cyc}s linear infinite}}")
+        svg.css.append(f"@keyframes {hl}{{0%,{t_done / cyc * 100:.1f}%{{opacity:0}}{(t_done + .6) / cyc * 100:.1f}%,{(cyc - .6) / cyc * 100:.1f}%{{opacity:1}}100%{{opacity:0}}}}"
+                       f".{hl}{{animation:{hl} {cyc}s ease-in-out infinite}}")
         g = [f'<g transform="translate({x},{y})"><g class="tile" style="animation-delay:{.12 * i:.2f}s">',
              f'<rect x=".5" y=".5" width="393" height="216" rx="14" fill="{th["tile"]}" stroke="{th["bd"]}"/>',
-             f'<rect class="{hl}" x="1" y="1" width="392" height="215" rx="13.5" fill="none" stroke="{col}" stroke-width="2" opacity="0"/>',
+             f'<rect class="{hl}" x=".5" y=".5" width="393" height="216" rx="14" fill="{col}" fill-opacity=".06" '
+             f'stroke="{col}" stroke-opacity=".35" opacity="0"/>',
              f'<g transform="translate(364,32)" color="{th["mut"]}">{status}</g>',
              f'<g transform="translate(20,18)"><rect width="50" height="50" rx="12" fill="{col}" fill-opacity=".14"/>'
              f'<path class="icon" style="animation-delay:{.3 + .12 * i:.2f}s" d="{icon}" fill="none" stroke="{col}" '
@@ -370,25 +380,22 @@ def how_i_work(th, mode):
     h = 360
     svg = Svg(800, h, "How I work: an AI-native SDLC loop — " + " → ".join(f"{s} ({a})" for s, a, _ in LOOP)
               + f" → back to Plan; inner loop at Test: {INNER_LOOP[1]}")
-    svg.css.append("@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}")
     cx, cy, rx, ry = 400, h / 2 + 18, 215, h / 2 - 82
     d = f"M{cx} {cy - ry} a{rx} {ry} 0 1 1 0 {2 * ry} a{rx} {ry} 0 1 1 0 {-2 * ry}"
     gid = svg.uid("g")
     svg.defs.append(f'<linearGradient id="{gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0D9488"/>'
                     f'<stop offset=".5" stop-color="#0891B2"/><stop offset="1" stop-color="#7C3AED"/></linearGradient>')
     n = len(LOOP)
-    period = n * 1.8
-    out = [section_header(svg, "How I work", th), f'<path d="{d}" fill="none" stroke="url(#{gid})" stroke-width="3"/>']
-    for j in range(3):
-        out.append(f'<circle r="6" fill="{th["bg"]}" stroke="#0891B2" stroke-width="3">'
-                   f'<animateMotion dur="{period}s" begin="{-j * period / 3:.2f}s" repeatCount="indefinite" path="{d}"/></circle>')
+    period = n * 2.4
+    out = [section_header(svg, "How I work", th), f'<path d="{d}" fill="none" stroke="url(#{gid})" stroke-width="3"/>',
+           f'<circle r="6" fill="{th["bg"]}" stroke="#0891B2" stroke-width="3">'
+           f'<animateMotion dur="{period}s" repeatCount="indefinite" path="{d}"/></circle>']
     out.append(svg.text(cx, cy - 4, LOOP_CENTER[0], "Sora", 800, 22, th["fg"], "middle"))
     out.append(svg.text(cx, cy + 20, LOOP_CENTER[1], "Geist", 400, 13.5, th["mut"], "middle"))
     for i, (stage, art, col) in enumerate(LOOP):
         a = -math.pi / 2 + i * 2 * math.pi / n
         X, Y = cx + rx * math.cos(a), cy + ry * math.sin(a)
-        out.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="17" fill="{col}" fill-opacity=".2" '
-                   f'style="animation:pulse {period}s {i * 1.8 - period:.1f}s ease-in-out infinite"/>')
+        out.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="17" fill="{col}" fill-opacity=".16"/>')
         out.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="10" fill="{col}"/>')
         side = 1 if X > cx + 30 else -1 if X < cx - 30 else 0
         anchor = {1: "start", -1: "end", 0: "middle"}[side]
@@ -402,45 +409,34 @@ def how_i_work(th, mode):
     dd = f"M{X:.1f} {Y - r:.1f} a{r} {r} 0 1 1 0 {2 * r} a{r} {r} 0 1 1 0 {-2 * r}"
     amber = "#B45309" if mode == "light" else "#FBBF24"
     out.append(f'<path d="{dd}" fill="none" stroke="{amber}" stroke-width="2" stroke-dasharray="3 4"/>'
-               f'<circle r="4.5" fill="{amber}"><animateMotion dur="2.2s" repeatCount="indefinite" path="{dd}"/></circle>')
+               f'<circle r="4.5" fill="{amber}"><animateMotion dur="3.6s" repeatCount="indefinite" path="{dd}"/></circle>')
     out.append(svg.text(X + r + 10, Y + 4, label, "Geist", 600, 12.5, amber))
     svg.add("".join(out))
     return svg
 
 
 def toolbox(th, mode):
-    rows = len(TOOLBOX)
-    h = 58 + rows * 56
-    svg = Svg(800, h, "Toolbox: " + "; ".join(f"{g}: {', '.join(items)}" for g, _, _, _, items in TOOLBOX))
-    x0, span = 176, 800 - 176
+    """Still, grouped chips: scannable by area, nothing moving."""
+    svg = Svg(800, 0, "Toolbox: " + "; ".join(f"{g}: {', '.join(items)}" for g, _, _, _, items in TOOLBOX))
+    x0, row_h, gap = 176, 44, 18
     out = [section_header(svg, "Toolbox", th)]
-    fade = svg.uid("f")
-    svg.defs.append(f'<linearGradient id="{fade}"><stop offset="0" stop-color="{th["bg"]}"/>'
-                    f'<stop offset=".07" stop-color="{th["bg"]}" stop-opacity="0"/><stop offset=".93" stop-color="{th["bg"]}" stop-opacity="0"/>'
-                    f'<stop offset="1" stop-color="{th["bg"]}"/></linearGradient>')
-    for ri, (group, c_l, c_d, t_l, items) in enumerate(TOOLBOX):
+    y = 58
+    for group, c_l, c_d, t_l, items in TOOLBOX:
         col = c_l if mode == "light" else c_d
         tcol = t_l if mode == "light" else c_d
-        y = 58 + ri * 56
         out.append(svg.text(0, y + 22, group, "Sora", 700, 14.5, tcol))
-        widths = [text_width(s, "Geist", 600, 14) + 32 for s in items]
-        one = sum(widths) + 10 * len(items)
-        reps = max(1, math.ceil(span / one))
-        unit = one * reps
-        chips, cx = [], 0.0
-        for _ in range(2 * reps):
-            for s, w in zip(items, widths):
-                chips.append(f'<rect x="{cx:.1f}" width="{w:.1f}" height="34" rx="17" fill="{col}" fill-opacity=".13"/>')
-                chips.append(svg.text(cx + 16, 22, s, "Geist", 600, 14, tcol))
-                cx += w + 10
-        k = svg.uid("m")
-        frm, to = ("0", f"-{unit:.1f}px") if ri % 2 == 0 else (f"-{unit:.1f}px", "0")
-        svg.css.append(f"@keyframes {k}{{from{{transform:translateX({frm})}}to{{transform:translateX({to})}}}}"
-                       f".{k}{{animation:{k} {unit / 22:.1f}s linear infinite}}")
-        cid = svg.uid("c")
-        svg.defs.append(f'<clipPath id="{cid}"><rect x="{x0}" y="{y - 4}" width="{span}" height="44"/></clipPath>')
-        out.append(f'<g clip-path="url(#{cid})"><g transform="translate({x0},{y})"><g class="{k}">{"".join(chips)}</g></g></g>')
-    out.append(f'<rect x="{x0}" y="50" width="{span}" height="{h - 50}" fill="url(#{fade})"/>')
+        widths = [text_width(s, "Geist", 600, 14) + 32 + 10 for s in items]
+        target = sum(widths) / math.ceil(sum(widths) / (svg.w - x0 + 10))  # balance rows instead of leaving orphans
+        cx, cy = x0, y
+        for s in items:
+            w = text_width(s, "Geist", 600, 14) + 32
+            if cx > x0 and (cx + w > svg.w or cx - x0 + w > target * 1.1):
+                cx, cy = x0, cy + row_h
+            out.append(f'<rect x="{cx:.1f}" y="{cy}" width="{w:.1f}" height="34" rx="17" fill="{col}" fill-opacity=".13"/>')
+            out.append(svg.text(cx + 16, cy + 22, s, "Geist", 600, 14, tcol))
+            cx += w + 10
+        y = cy + row_h + gap
+    svg.h = y - gap
     svg.add("".join(out))
     return svg
 
@@ -457,10 +453,8 @@ def footer(th):
     svg.defs.append(f'<clipPath id="{clip}"><path d="{round_rect(800, 130, 12, top=False)}"/></clipPath>')
     body = [lagoon_field(svg, 800, 130, [(130, 100, 110, "#0D9488"), (430, 120, 110, "#059669"),
                                          (690, 90, 110, "#0891B2"), (760, 130, 80, "#1D4ED8")], 16, 5, (120, 150))]
-    body.append(wave(36, th["bg"], 0.35, flip=True))
-    body.append(wave(30, th["bg"], 1, flip=True))
     body.append(svg.text(400, 96, FOOTER_LINE, "Sora", 700, 17, "#ffffff", "middle"))
-    svg.add(f'<g clip-path="url(#{clip})">{"".join(body)}</g>')
+    svg.add(masked(svg, clip, body, [wave(36, "#000", 0.35, flip=True), wave(30, "#000", 1, flip=True)], 130))
     return svg
 
 
